@@ -28,7 +28,7 @@ blueprint! {
             match self.lender_accounts.get(&address){
                 Some(acc) =>{
                     let (mut vault, mut resource) = acc;
-                    let exchange_rate: Decimal = if vault.amount() > dec!(0) { resource.total_supply()/vault.amount() } else { dec!(1) };
+                    let exchange_rate: Decimal = if resource.total_supply() > dec!(0) { resource.total_supply()/vault.amount() } else { dec!(1) };
                     let lenders_bought: Decimal = exchange_rate*payment.amount();
                     vault.put(payment);
                     self.lender_badge.authorize(|auth|{
