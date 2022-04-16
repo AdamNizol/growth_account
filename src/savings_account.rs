@@ -7,19 +7,30 @@ blueprint! {
     }
 
     impl SavingsAccount {
-        pub fn new(public_key: EcdsaPublicKey) -> Component {
+        // TODO: at 0.4.0 revert to:
+        // pub fn new(public_key: EcdsaPublicKey) -> Component {
+        pub fn new(public_key: String) -> Component {
             Self {
-                public_key,
+                // TODO: at 0.4.0 revert to:
+                // public_key,
+                public_key: EcdsaPublicKey::from_str(public_key.as_str()).unwrap(),
                 vaults: LazyMap::new(),
             }
             .instantiate()
         }
 
-        pub fn with_bucket(public_key: EcdsaPublicKey, bucket: Bucket) -> Component {
+        // TODO: at 0.4.0 revert to:
+        // pub fn with_bucket(public_key: EcdsaPublicKey, bucket: Bucket) -> Component {
+        pub fn with_bucket(public_key: String, bucket: Bucket) -> Component {
             let vaults = LazyMap::new();
             vaults.insert(bucket.resource_address(), (Vault::with_bucket(bucket), None, false, false, dec!("0.09")));
 
-            Self { public_key, vaults }.instantiate()
+            Self {
+                // TODO: at 0.4.0 revert to:
+                // public_key,
+                public_key: EcdsaPublicKey::from_str(public_key.as_str()).unwrap(),
+                vaults
+            }.instantiate()
         }
 
         /// Deposit a batch of buckets into this account

@@ -84,7 +84,7 @@ blueprint! {
                 Some(acc) =>{
                     let (mut vault, _resource) = acc;
 
-                    assert!(amount < vault.amount(), "Not enough funds to loan");
+                    assert!(amount <= vault.amount(), "Not enough funds to loan");
 
                     // Call the execute method at the specified component's address with the requested funds
                     let args = vec![
