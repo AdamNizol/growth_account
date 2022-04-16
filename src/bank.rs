@@ -106,7 +106,6 @@ blueprint! {
                     let reserve_base_tokens = repayment.take( (amount_to_take - amount)*(self.bank_cut/100) );
                     vault.put(repayment);
                     let reserve_fund = self.deposit(reserve_base_tokens);
-                    // let reserve_fund = repayment.take( (amount_to_take - amount)*(self.bank_cut/100) );
 
                     let token_addr = reserve_fund.resource_address();
                     match self.reserves.get(&token_addr) {
