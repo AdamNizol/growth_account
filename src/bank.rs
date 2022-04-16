@@ -3,21 +3,25 @@ use scrypto::prelude::*;
 blueprint! {
     struct Bank {
         loan_interest: Decimal,
+        bank_cut: Decimal,
         lender_badge: Vault,
         lender_accounts: LazyMap<Address, (Vault, ResourceDef)>,
         lender_lookup: LazyMap<Address, Address>, // <LenderTokenAddr, TokenAddr>
+        reserves: LazyMap<Address, Vault>,
     }
 
     impl Bank {
 
-        pub fn new(loan_interest: Decimal) -> Component {
+        pub fn new(loan_interest: Decimal, bank_cut: Decimal) -> Component {
             let admin_badge: Bucket = ResourceBuilder::new_fungible(DIVISIBILITY_NONE).initial_supply_fungible(1);
 
             Self {
                 loan_interest: loan_interest,
+                bank_cut: bank_cut,
                 lender_badge: Vault::with_bucket(admin_badge),
                 lender_accounts: LazyMap::new(),
-                lender_lookup: LazyMap::new()
+                lender_lookup: LazyMap::new(),
+                reserves: LazyMap::new(),
             }
             .instantiate()
         }
@@ -97,7 +101,23 @@ blueprint! {
                     let amount_to_take = amount * ((self.loan_interest / 100) + 1);
                     assert!(returned_bucket.amount() >= amount_to_take, "You have to return more than {}", amount_to_take);
 
-                    vault.put(returned_bucket.take(amount_to_take));
+
+                    let mut repayment = returned_bucket.take(amount_to_take);
+                    let reserve_base_tokens = repayment.take( (amount_to_take - amount)*(self.bank_cut/100) );
+                    vault.put(repayment);
+                    let reserve_fund = self.deposit(reserve_base_tokens);
+                    // let reserve_fund = repayment.take( (amount_to_take - amount)*(self.bank_cut/100) );
+
+                    let token_addr = reserve_fund.resource_address();
+                    match self.reserves.get(&token_addr) {
+                        Some(mut v) => {
+                            v.put(reserve_fund);
+                        }
+                        None => {
+                            let v = Vault::with_bucket(reserve_fund);
+                            self.reserves.insert(token_addr, v);
+                        }
+                    };
 
                     // Return the change back to the component
                     return returned_bucket;
