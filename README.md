@@ -1,5 +1,5 @@
 # Scrypto Growth-Account
- 
+
 ## Advantages of a Growth-Account
 - Tokens can be toggled between earning passive interest or remaining in the account
 - While earning interest, tokens can still be spent from the account as usual
@@ -33,7 +33,7 @@ save the ***$component***
 ```
 resim call-function $package SavingsAccount with_bucket $pubkey 1000000,$xrd $component
 ```
-save the component address as ***$account***
+save the component address as ***$account***  
 <br>
 ```
 resim set-default-account $account $pubkey
@@ -41,7 +41,7 @@ resim set-default-account $account $pubkey
 <br>
 
 ## Toggling passive growth
-To allow a token to be banked and earning interest you need to call the **bank_token(token Address)** method on your account. 
+To allow a token to be banked and earning interest you need to call the **bank_token(token Address)** method on your account.  
 Unfortunately since this requires account auth like the withdraw method, it cannot be run directly with resim but you can use a rtm file:
 ```
 CLONE_BUCKET_REF BucketRef(1u32) BucketRef("badge1");
