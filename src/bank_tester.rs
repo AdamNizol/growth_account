@@ -20,5 +20,9 @@ blueprint! {
             returned_bucket
         }
 
+        pub fn donate(&mut self, money: Bucket) -> () {
+            self.vault.put(money);
+        }
+
     }
 }

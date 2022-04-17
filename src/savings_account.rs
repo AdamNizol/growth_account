@@ -4,24 +4,26 @@ blueprint! {
     struct SavingsAccount {
         public_key: EcdsaPublicKey,
         vaults: LazyMap<Address, (Vault, Option<Address>, bool, bool, Decimal)>, // (localStorage, bankTokenAddress, isUsingBank, localStorageIsBorrowable, loanInterest)
+        bank: Address,
     }
 
     impl SavingsAccount {
         // TODO: at 0.4.0 revert to:
         // pub fn new(public_key: EcdsaPublicKey) -> Component {
-        pub fn new(public_key: String) -> Component {
+        pub fn new(public_key: String, bank: Address) -> Component {
             Self {
                 // TODO: at 0.4.0 revert to:
                 // public_key,
                 public_key: EcdsaPublicKey::from_str(public_key.as_str()).unwrap(),
                 vaults: LazyMap::new(),
+                bank
             }
             .instantiate()
         }
 
         // TODO: at 0.4.0 revert to:
         // pub fn with_bucket(public_key: EcdsaPublicKey, bucket: Bucket) -> Component {
-        pub fn with_bucket(public_key: String, bucket: Bucket) -> Component {
+        pub fn with_bucket(public_key: String, bucket: Bucket, bank: Address) -> Component {
             let vaults = LazyMap::new();
             vaults.insert(bucket.resource_address(), (Vault::with_bucket(bucket), None, false, false, dec!("0.09")));
 
@@ -29,7 +31,8 @@ blueprint! {
                 // TODO: at 0.4.0 revert to:
                 // public_key,
                 public_key: EcdsaPublicKey::from_str(public_key.as_str()).unwrap(),
-                vaults
+                vaults,
+                bank
             }.instantiate()
         }
 
@@ -44,8 +47,17 @@ blueprint! {
         pub fn deposit(&mut self, bucket: Bucket) {
             let address = bucket.resource_address();
             match self.vaults.get(&address) {
-                Some( (mut vault, _bank_token_address, _is_using_bank, _local_storage_is_borrowable, _loan_interest) ) => {
-                    vault.put(bucket);
+                Some( (mut vault, bank_token_address, is_using_bank, _local_storage_is_borrowable, _loan_interest) ) => {
+                    if is_using_bank {
+                        let (mut v, _bta, _iub, _lsb, _li) = self.vaults.get(&bank_token_address.unwrap()).unwrap();
+                        let args = vec![
+                            scrypto_encode(&bucket)
+                        ];
+                        let lended_tokens: Bucket = Component::from(self.bank).call::<Bucket>("deposit", args).into();
+                        v.put(lended_tokens);
+                    }else{
+                        vault.put(bucket);
+                    }
                 }
                 None => {
                     let v = Vault::with_bucket(bucket);
@@ -69,7 +81,21 @@ blueprint! {
 
             let vault = self.vaults.get(&resource_address);
             match vault {
-                Some( (mut vault, _bank_token_address, _is_using_bank, _local_storage_is_borrowable, _loan_interest) ) => vault.take(amount),
+                Some( (mut vault, bank_token_address, is_using_bank, _local_storage_is_borrowable, _loan_interest) ) => {
+                    if is_using_bank {
+                        let (mut v, _bta, _iub, _lsb, _li) = self.vaults.get(&bank_token_address.unwrap()).unwrap();
+                        let args = vec![
+                            scrypto_encode(&v.take(v.amount()))
+                        ];
+                        let mut base_tokens: Bucket = Component::from(self.bank).call::<Bucket>("withdraw", args).into();
+                        let withdrawn_tokens = base_tokens.take(amount);
+                        let lended_tokens: Bucket = Component::from(self.bank).call::<Bucket>("deposit", vec![scrypto_encode(&base_tokens)]).into();
+                        v.put(lended_tokens);
+                        return withdrawn_tokens;
+                    }else{
+                        vault.take(amount)
+                    }
+                }
                 None => {
                     panic!("Insufficient balance");
                 }
@@ -137,6 +163,60 @@ blueprint! {
                         bucket.put(vault.take_non_fungible_with_auth(&key, auth.clone()));
                     }
                     bucket
+                }
+                None => {
+                    panic!("Insufficient balance")
+                }
+            }
+        }
+
+        // makes a token auto-lended
+        pub fn bank_token(
+            &mut self,
+            resource_address: Address,
+            account_auth: BucketRef, // disabled until the virtual signature badge can be passed in automatically
+        ) -> () {
+            account_auth.check_non_fungible_key(ECDSA_TOKEN, |key| key == &self.non_fungible_key()); // disabled until the virtual signature badge can be passed in automatically
+
+            let vault = self.vaults.get(&resource_address);
+            match vault {
+                Some((mut vault, _bank_token_address, is_using_bank, local_storage_is_borrowable, loan_interest)) => {
+                    assert!(!is_using_bank, "already using Bank for this token");
+                    let args = vec![
+                        scrypto_encode(&vault.take(vault.amount()))
+                    ];
+
+                    let lended_tokens: Bucket = Component::from(self.bank).call::<Bucket>("deposit", args).into();
+                    self.vaults.insert(resource_address, (vault, Some(lended_tokens.resource_address()), true, local_storage_is_borrowable, loan_interest) );
+                    self.deposit(lended_tokens);
+                }
+                None => {
+                    panic!("Insufficient balance")
+                }
+            }
+        }
+
+        // makes a token no longer auto-lended
+        pub fn unbank_token(
+            &mut self,
+            resource_address: Address,
+            account_auth: BucketRef, // disabled until the virtual signature badge can be passed in automatically
+        ) -> () {
+            account_auth.check_non_fungible_key(ECDSA_TOKEN, |key| key == &self.non_fungible_key()); // disabled until the virtual signature badge can be passed in automatically
+
+            let vault = self.vaults.get(&resource_address);
+            match vault {
+                Some((mut vault, bank_token_address, is_using_bank, local_storage_is_borrowable, loan_interest)) => {
+                    assert!(is_using_bank, "Bank is not currently used for this token");
+
+                    let (mut v, _bta, _iub, _lsb, _li) = self.vaults.get(&bank_token_address.unwrap()).unwrap();
+                    let args = vec![
+                        scrypto_encode(&v.take(v.amount()))
+                    ];
+
+                    let base_tokens: Bucket = Component::from(self.bank).call::<Bucket>("withdraw", args).into();
+                    vault.put(base_tokens);
+                    self.vaults.insert(resource_address, (vault, bank_token_address, false, local_storage_is_borrowable, loan_interest) );
                 }
                 None => {
                     panic!("Insufficient balance")
