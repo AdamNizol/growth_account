@@ -8,22 +8,27 @@ blueprint! {
         lender_accounts: LazyMap<Address, (Vault, ResourceDef)>,
         lender_lookup: LazyMap<Address, Address>, // <LenderTokenAddr, TokenAddr>
         reserves: LazyMap<Address, Vault>,
+        admin_badge: ResourceDef,
     }
 
     impl Bank {
 
-        pub fn new(loan_interest: Decimal, bank_cut: Decimal) -> Component {
-            let admin_badge: Bucket = ResourceBuilder::new_fungible(DIVISIBILITY_NONE).initial_supply_fungible(1);
+        pub fn new(loan_interest: Decimal, bank_cut: Decimal) -> (Component, Bucket) {
+            let lender_badge: Bucket = ResourceBuilder::new_fungible(DIVISIBILITY_NONE).initial_supply_fungible(1);
+            let admin_badge: Bucket = ResourceBuilder::new_fungible(DIVISIBILITY_NONE).metadata("name", "Bank Admin").initial_supply_fungible(1);
 
-            Self {
+            let component = Self {
                 loan_interest: loan_interest,
                 bank_cut: bank_cut,
-                lender_badge: Vault::with_bucket(admin_badge),
+                lender_badge: Vault::with_bucket(lender_badge),
                 lender_accounts: LazyMap::new(),
                 lender_lookup: LazyMap::new(),
                 reserves: LazyMap::new(),
+                admin_badge: admin_badge.resource_def(),
             }
-            .instantiate()
+            .instantiate();
+
+            (component, admin_badge)
         }
 
         // mints new lender tokens at the current exchange rate
@@ -80,6 +85,12 @@ blueprint! {
                     panic!("No lender account found")
                 }
             }
+        }
+
+        #[auth(admin_badge)]
+        pub fn withdraw_bank_cut(&mut self, currency: Address) -> Bucket{
+            let (_vault, resource_def) = self.lender_accounts.get(&currency).unwrap();
+            self.withdraw(self.reserves.get(&resource_def.address()).unwrap().take_all())
         }
 
         // modified flash loan code from tweeted repo
