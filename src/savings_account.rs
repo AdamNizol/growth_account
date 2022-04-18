@@ -174,9 +174,9 @@ blueprint! {
         pub fn bank_token(
             &mut self,
             resource_address: Address,
-            account_auth: BucketRef, // disabled until the virtual signature badge can be passed in automatically
+            account_auth: BucketRef,
         ) -> () {
-            account_auth.check_non_fungible_key(ECDSA_TOKEN, |key| key == &self.non_fungible_key()); // disabled until the virtual signature badge can be passed in automatically
+            account_auth.check_non_fungible_key(ECDSA_TOKEN, |key| key == &self.non_fungible_key());
 
             let vault = self.vaults.get(&resource_address);
             match vault {
@@ -200,9 +200,9 @@ blueprint! {
         pub fn unbank_token(
             &mut self,
             resource_address: Address,
-            account_auth: BucketRef, // disabled until the virtual signature badge can be passed in automatically
+            account_auth: BucketRef,
         ) -> () {
-            account_auth.check_non_fungible_key(ECDSA_TOKEN, |key| key == &self.non_fungible_key()); // disabled until the virtual signature badge can be passed in automatically
+            account_auth.check_non_fungible_key(ECDSA_TOKEN, |key| key == &self.non_fungible_key());
 
             let vault = self.vaults.get(&resource_address);
             match vault {
@@ -224,13 +224,49 @@ blueprint! {
             }
         }
 
+        pub fn set_borrowable(
+            &mut self,
+            resource_address: Address,
+            account_auth: BucketRef,
+        ) -> () {
+            account_auth.check_non_fungible_key(ECDSA_TOKEN, |key| key == &self.non_fungible_key());
+
+            let (vault, bank_token_address, is_using_bank, local_storage_is_borrowable, loan_interest) = self.vaults.get(&resource_address).unwrap();
+            assert!(!local_storage_is_borrowable, "That loken is already borrowable");
+            self.vaults.insert(resource_address, (vault, bank_token_address, is_using_bank, true, loan_interest) );
+        }
+
+        pub fn set_unborrowable(
+            &mut self,
+            resource_address: Address,
+            account_auth: BucketRef,
+        ) -> () {
+            account_auth.check_non_fungible_key(ECDSA_TOKEN, |key| key == &self.non_fungible_key());
+
+            let (vault, bank_token_address, is_using_bank, local_storage_is_borrowable, loan_interest) = self.vaults.get(&resource_address).unwrap();
+            assert!(local_storage_is_borrowable, "That loken is already borrowable");
+            self.vaults.insert(resource_address, (vault, bank_token_address, is_using_bank, false, loan_interest) );
+        }
+
+        pub fn set_interest_rate(
+            &mut self,
+            resource_address: Address,
+            interest_rate: Decimal,
+            account_auth: BucketRef,
+        ) -> () {
+            account_auth.check_non_fungible_key(ECDSA_TOKEN, |key| key == &self.non_fungible_key());
+
+            let (vault, bank_token_address, is_using_bank, local_storage_is_borrowable, _loan_interest) = self.vaults.get(&resource_address).unwrap();
+            self.vaults.insert(resource_address, (vault, bank_token_address, is_using_bank, local_storage_is_borrowable, interest_rate) );
+        }
+
         // modified flash loan code from tweeted repo
         pub fn request_loan(&mut self, amount: Decimal, resource_address: Address, component_address: Address) -> Bucket {
             let vault = self.vaults.get(&resource_address);
             match vault {
                 Some((mut vault, _bank_token_address, _is_using_bank, local_storage_is_borrowable, loan_interest)) => {
                     if local_storage_is_borrowable{
-                        assert!(amount < vault.amount(), "Not enough funds to loan");
+                        assert!(amount <= vault.amount(), "Not enough funds to loan");
 
                         // Call the execute method at the specified component's address with the requested funds
                         let args = vec![
@@ -256,5 +292,18 @@ blueprint! {
                 }
             }
         }
+
+        // lends out all the cash in the vault
+        pub fn request_max_loan(&mut self, currency: Address, component_address: Address) -> Bucket {
+            match self.vaults.get(&currency){
+                Some((vault, _bank_token_address, _is_using_bank, _local_storage_is_borrowable, _loan_interest)) =>{
+                    self.request_loan(vault.amount(), currency, component_address)
+                }
+                None =>{
+                    panic!("No liquidity for this token is available")
+                }
+            }
+        }
+
     }
 }
